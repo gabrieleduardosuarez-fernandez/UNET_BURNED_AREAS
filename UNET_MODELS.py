@@ -23,6 +23,8 @@ import datetime
 from tensorflow.keras.layers import Input, Lambda, Conv2D, Dropout, MaxPooling2D, Conv2DTranspose, concatenate
 from tensorflow.keras.models import Model
 from tensorflow.keras.losses import BinaryCrossentropy
+from sklearn.model_selection import train_test_split
+
 
 from PIL import Image
 
@@ -41,50 +43,6 @@ def restart_kernel():
     os.execv(sys.executable, ['python'] + sys.argv)
 
 # -----------------------------------------------------------------------------
-
-width_shape, height_shape = 256, 256 # Tamaño de las imagenes de entrada
-batch_size = 32 #NUMERO DE LOTES QUE SE VAN TOMANDO DEL TOTAL DEL CONJUNTO 
-epochs = 100
-
-HUELLAS_LIST = ["HUELLA_204030", "HUELLA_204031", "HUELLA_205030"]
-
-Xtotal = [] 
-Ytotal = []
-for HUELLA in HUELLAS_LIST:
-    
-    data_path_MULTISPECTRAL = ("C:/PFIRE_FOREST_GALI_U_NET/" + HUELLA + "/1_RESULTADOS/MULTISPECTRAL_ENMASK/")   
-    data_path_MASK = ("C:/PFIRE_FOREST_GALI_U_NET/" + HUELLA + "/1_RESULTADOS/MASK_FIRE/")  
-
-
-    # obtenemos una lista con los archivos dentro de cada carpeta
-    data_list_train = os.listdir(data_path_MULTISPECTRAL)
-
-
-    for folder in data_list_train:
-
-        file_list_per_folder = os.listdir(data_path_MULTISPECTRAL + folder)
-        
-        file_list_per_folder_ = []
-        for files in file_list_per_folder:
-            if os.path.isfile(os.path.join(data_path_MULTISPECTRAL, folder, files)) and files.endswith('.TIF'):
-                file_list_per_folder_ .append(files)
-                
-    
-        for file in tqdm(file_list_per_folder_):
-        
-            # leemos cada imagen del dataset de entrenamiento y la redimensionamos
-            img = imread(data_path_MULTISPECTRAL + folder +'/'+ file)[:,:,:]  
-            Xtotal.append(img)
-        
-            mask = imread(data_path_MASK + folder + '/' + file) 
-            Ytotal.append(mask)
-
-
-
-
-#-----------------------------------------------
-# --------------------------- PARA IMAGENES JUNTAS -----------------------
-
 
 width_shape, height_shape = 256, 256 # Tamaño de las imagenes de entrada
 batch_size = 32 #NUMERO DE LOTES QUE SE VAN TOMANDO DEL TOTAL DEL CONJUNTO 
@@ -120,16 +78,8 @@ for file in tqdm(file_list_per_folder_):
 
 #-----------------------------------------------
 
-
-
-# SELECT TRAINING SET (80%)
-Xtrain = Xtotal[:10150]
-Ytrain = Ytotal[:10150]
-
-# SELECT TESTEO SET (20%)
-Xtesteo = Xtotal[10150:]
-Ytesteo = Ytotal[10150:]
-
+# Split into Training (80%) and Testing (20%) on a random basis
+Xtrain, Xtesteo, Ytrain, Ytesteo = train_test_split(Xtotal, Ytotal, test_size=0.2, random_state=123)
 
 
 # TRAINING SET (60%)
@@ -154,8 +104,7 @@ plt.show()
 
 
 #------
-# Definimos la entrada al modelo
-Image_input = Input((height_shape, width_shape, 3)) #OJO CON EL NUMERO DE CANALES SE CAMBIA A 8 O 3...
+Image_input = Input((height_shape, width_shape, 3)) #WATCH OUT FOR THE NUMBER OF CHANNELS TO BE CHANGED TO 8 OR 3...
 Image_in = Lambda(lambda x: x / 255)(Image_input) 
 
 #contracting path
@@ -217,7 +166,7 @@ def iou(y_true, y_pred, smooth=1):
  
 from keras.optimizers import Adam
 
-opt = Adam(learning_rate=0.0001, # establecemos la tasa de aprendizaje en 0.01
+opt = Adam(learning_rate=0.0001, 
     epsilon=1e-07) 
 
 model = Model(inputs=[Image_input], outputs=[outputs])
@@ -240,33 +189,20 @@ logdir = os.path.join("logs", datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
 
 callbacks_list = [TensorBoard(logdir, histogram_freq=1),
                   EarlyStopping(monitor = 'val_iou',
-                                min_delta = 0.0010, #SE MODIFICA PARA MONITORIZAR IOU DE 0.0002 A 0.0010
+                                min_delta = 0.0010, 
                                 patience = 6,
                                 verbose = 1,
                                 mode = "max")]
 
-"""
-                  ReduceLROnPlateau(monitor='val_loss',
-                      factor=0.1,
-                      patience=3,
-                      verbose=1,
-                      mode="min",
-                      min_delta=0.0001,
-                      min_lr=0)]
-    
-"""
           
 #-----
 
 results = model.fit(X_train, Y_train,
-                    validation_split=0.25, #DEL TOTAL DE DATOS ES EL .20 (60/20/20)
+                    validation_split=0.25, #FROM TOTAL DATA IS .20 (60/20/20)
                     batch_size=batch_size, 
                     epochs=epochs,
                     shuffle = True,
                     callbacks=[callbacks_list])
-
-
-
 
 
 # save the model to disk
@@ -286,7 +222,7 @@ print(result)
 
 
 # ---------------
-# EVALUACION DEL MODELO #
+# MODELs ASSESSMENT #
 
 evaluateS = model.evaluate(X_testeo, Y_testeo)
 evaluateS
@@ -298,15 +234,13 @@ with open('evaluacion_model.json', 'w') as jf:
 
 
 
-#ANALISIS DE LOS RESULTADOS 
+#RESULTS ANALYSIS# 
 
 historial_entrenamiento = results.history
 historial_entrenamiento
 
 with open('historial_entrenamiento.json', 'w') as jf: 
     json.dump(historial_entrenamiento, jf, ensure_ascii=False, indent=2)
-
-
 
 
 acc = results.history['accuracy']
@@ -340,7 +274,7 @@ plt.legend(loc='upper right')
 plt.title('Training and Validation IoU')
 plt.show()
 
-# prediccion Y TEST 
+# PREDICTION AND TEST # 
 
 
 from sklearn.metrics import multilabel_confusion_matrix
@@ -348,13 +282,14 @@ from sklearn.metrics import precision_score, recall_score, f1_score, accuracy_sc
 from sklearn.metrics import precision_recall_fscore_support
 from sklearn.metrics import cohen_kappa_score
 
+tensorflow.keras.utils.register_keras_serializable("iou")(iou)
+
 os.chdir("C:/Users/Gabriel/Documents/FINAL_MODEL_UNET/MODEL_BASED_IOU/MULTISPECTRAL_6BANDS") 
 print(os.getcwd())
 
 # load the model from disk
 filename = 'MODEL_FINAL_ALL_6bands.sav'
 model = pickle.load(open(filename, 'rb'))
-
 
 preds = model.predict(X_testeo)
 
@@ -402,6 +337,68 @@ plt.show()
 
 plt.imshow(Y_testeo[27])
 plt.show()
+
+# Bootstrap  for Confidence Intervals for IoU #
+
+import matplotlib.pyplot as plt
+import json
+
+os.chdir("C:/Users/Gabriel/Downloads/MODEL_BASED_IOU/B_NDVI_NBR") 
+print(os.getcwd())
+
+# load the model from disk
+filename = 'MODEL_FINAL_B_NDVI_NBR.h5'
+
+from keras.models import load_model
+from keras.utils import custom_object_scope
+
+with custom_object_scope({'iou': iou}):
+    model = load_model(filename)
+
+
+def bootstrap_evaluate(model, X_test, y_test, metric_index=2, num_samples=100, conf_level=0.95):
+   
+    scores = []
+    n = X_test.shape[0]
+    nro = 0
+
+    for i in range(num_samples):
+        if (i + 1) % 100 == 0 or i == 0:  # Imprimir cada 100 muestras y en la primera iteración
+            print(f"Bootstrap iteration: {i + 1}/{num_samples}")
+        
+        # Seleccionar una muestra aleatoria con reemplazo
+        indices = np.random.choice(range(n), n, replace=True)
+        X_sample = X_test[indices]
+        y_sample = y_test[indices]
+        
+        # Evaluar la métrica (IoU) para la muestra bootstrap
+        evaluation = model.evaluate(X_sample, y_sample, verbose=0)
+        scores.append(evaluation[metric_index])  # Almacenar solo el IoU
+        
+        nro = nro + 1
+        print(nro)
+
+    # Calcular intervalo de confianza
+    lower_bound = np.percentile(scores, (1 - conf_level) / 2 * 100)
+    upper_bound = np.percentile(scores, (1 + conf_level) / 2 * 100)
+    return np.mean(scores), (lower_bound, upper_bound)
+
+
+
+# Calcular el IoU y su intervalo de confianza mediante bootstrap
+iou_mean, iou_ci = bootstrap_evaluate(model, X_testeo, Y_testeo, metric_index=2)
+
+# Mostrar resultados
+print(f"IoU Mean: {iou_mean}")
+print(f"IoU Confidence Interval: {iou_ci}")
+
+# Save Results in JSON
+TEST = {
+    "iou_score": {"mean": iou_mean, "conf_interval": iou_ci}
+}
+
+with open('iou_confidence_interval.json', 'w') as jf:
+    json.dump(TEST, jf, ensure_ascii=False, indent=2)
 
 
 #vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv# 
@@ -524,6 +521,7 @@ ds_referencia = None
 ds_sin_referencia = None
 
 print("Georreferentiation Completed.")
+
 
 
 
