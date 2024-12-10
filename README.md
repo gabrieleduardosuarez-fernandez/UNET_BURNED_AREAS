@@ -7,3 +7,5 @@ Firstly, a script is developed in R to create a tailored dataset with each burne
 The U-NET was then trained with the python script. 
 
 Model results will be shared upon request to the corresponding author. 
+
+All details and reference: https://doi.org/10.1016/j.asr.2024.12.001 
